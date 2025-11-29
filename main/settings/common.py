@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-
 from main.const import BASE_MEDIA_URL, BASE_MEDIA_ROOT, DEBUG_DOT_LOG_PATH
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -14,7 +13,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     'rest_framework',
-    'corsheaders', #todo beware
+    'corsheaders',  # todo beware
 
     'users',
     'blogs',

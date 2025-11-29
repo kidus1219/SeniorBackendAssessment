@@ -1,5 +1,8 @@
 import dj_database_url
+from dotenv import load_dotenv
 from .common import *
+
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 DEBUG = True
 
