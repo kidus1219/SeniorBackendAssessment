@@ -1,0 +1,1 @@
+1. circle back to DebugToolbarMiddleware, corsheaders, rate limiter, EnsureCSRFMiddleware

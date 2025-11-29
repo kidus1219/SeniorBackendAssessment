@@ -1,0 +1,34 @@
+name: IDEEZA-ASSESSMENT Deploy to VM
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.VM_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -p ${{ secrets.VM_PORT }} -H ${{ secrets.VM_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Copy files using scp
+      run: |
+        rsync -avz --exclude='.git' --exclude='media' --exclude='debug.log' --delete --delete --delete-excluded -e "ssh -p ${{ secrets.VM_PORT }} -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" ./ ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:${{ secrets.VM_DEPLOY_DIR }}
+
+    - name: Run remote commands (install deps, etc.)
+      run: |
+        ssh -i ~/.ssh/id_rsa -p ${{ secrets.VM_PORT }} ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+          cd ${{ secrets.VM_DEPLOY_DIR }}
+          source ../.venv/bin/activate
+          pip install -r requirements.txt
+          dotenv -f ../.env run -- python manage.py migrate
+          
+          echo "Deployment Done"
+        EOF
