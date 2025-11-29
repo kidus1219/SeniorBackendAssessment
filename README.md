@@ -15,3 +15,6 @@ This repository demonstrates...
 
 ```bash
 
+2. create super user - admin, admin
+
+3. run python manage.py seed_dummy_data.py
