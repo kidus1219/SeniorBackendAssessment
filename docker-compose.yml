@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: blog_analytics_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=ideeza
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 3s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: blog_analytics_web
+    command: >
+      sh -c "sleep 3 &&
+             python manage.py migrate --noinput &&
+             if [ ! -f .seeded ]; then 
+                python manage.py seed_dummy_data && 
+                touch .seeded; 
+             fi &&
+             gunicorn main.wsgi:application -c gunicorn_config/dev_gunicorn.conf.py"
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=main.settings.dev
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/ideeza
+      - BASE_MEDIA_URL=/media/
+      - BASE_MEDIA_ROOT=media
+      - DEBUG_DOT_LOG_PATH=./debug.log
+      - SECRET_KEY=django-insecure-3q*gt51$-d8n*@z#k&x+y9zj)2v2#0230q!@*4wh1s)x7t-yuv
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

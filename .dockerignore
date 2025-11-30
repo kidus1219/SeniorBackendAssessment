@@ -1,0 +1,49 @@
+# Ensure unnecessary files are excluded from the build context
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtualenv
+.venv/
+env/
+venv/
+
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Editor stuff
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Django
+/media/
+static/
+*.sqlite3
+
+# Docker
+Dockerfile
+docker-compose.yml
+
+# Environments
+.env
+.env*
+.venv
+ENV/
+env.bak/
+venv.bak/
+
+# Additional exclusions
+node_modules/
+media/

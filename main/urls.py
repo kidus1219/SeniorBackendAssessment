@@ -3,10 +3,12 @@ from django.conf import settings
 from django.http import JsonResponse
 from django.urls import path, include, re_path
 from django.conf.urls.static import static
+from django.views.generic import TemplateView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('analytics/', include('analytics.urls')),
+    path('', TemplateView.as_view(template_name='analytics/index.html')),
 ]
 
 if settings.DEBUG:

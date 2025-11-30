@@ -1,7 +1,5 @@
-bind = "0.0.0.0:7000"
-# bind = "127.0.0.1:7000"
+bind = "0.0.0.0:8000"
 workers = 1
-# worker_class = "uvicorn.workers.UvicornWorker"
 preload_app = True
 
 
