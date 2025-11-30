@@ -84,6 +84,7 @@ def dynamic_filter_parser(filter_str):
             if len(q_objects) != 1:
                 raise ValueError("not() accepts exactly one condition")
             return ~q_objects[0]
+        return None
     else:
         # Base condition: field:op:value
         parts = filter_str.split(":", 2)
