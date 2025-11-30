@@ -3,7 +3,7 @@ from collections import defaultdict
 
 from dateutil.relativedelta import relativedelta
 from django.utils import timezone
-from django.db.models import Count, Q, F, Func, DateTimeField
+from django.db.models import Count, Q, F
 from django.db.models.functions import TruncMonth, TruncWeek, TruncDay, TruncYear
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -305,13 +305,13 @@ class PerformanceAnalytics(APIView):
         compare = params["compare"]
         start_date = params["start_date"]
         end_date = params["end_date"]
-        user = params.get("user_id")
+        user = params.get("user")
         dynamic_filter_param = params.get("filter")
 
         TruncFunc = self.get_trunc_function(compare)
 
-        blogs_qs = Blog.objects.filter(created_at__gte=start_date)
-        views_qs = BlogView.objects.filter(created_at__gte=start_date)
+        blogs_qs = Blog.objects.filter(created_at__gte=start_date, created_at__lte=end_date)
+        views_qs = BlogView.objects.filter(created_at__gte=start_date, created_at__lte=end_date)
 
         # Apply user filter - using username
         if user:
@@ -323,6 +323,7 @@ class PerformanceAnalytics(APIView):
             try:
                 parsed_filter = dynamic_filter_parser(dynamic_filter_param)
                 blogs_qs = blogs_qs.filter(parsed_filter)
+                views_qs = views_qs.filter(blog__in=blogs_qs)
             except Exception as e:
                 return Response({"detail": str(e)}, status=400)
 
@@ -344,7 +345,7 @@ class PerformanceAnalytics(APIView):
             .order_by('period')
         )
 
-        # Merging Data - I used a defaultdict instead of a normal dictionary cause it's just easier for handling missing keys
+        # Merging Data(must be in python) - I used a defaultdict instead of a normal dictionary cause it's just easier for handling missing keys
         timeline = defaultdict(lambda: {'blogs': 0, 'views': 0})
 
         for item in blogs_data:
