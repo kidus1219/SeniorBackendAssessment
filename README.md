@@ -15,7 +15,7 @@ This project is a Django REST API that provides analytics for blogs, users, and 
 
 Follow these steps to get the project running.
 
-**Requirements** `Docker` & `Docker Compose`
+**Requirements** `Docker` & `Docker Compose` (Make sure docker is active & running on your system)
 
 1. **Clone the Repository**
     ```bash
