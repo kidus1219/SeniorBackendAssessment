@@ -1,11 +1,15 @@
 import re
+from collections import defaultdict
 
 from dateutil.relativedelta import relativedelta
 from django.utils import timezone
-from django.db.models import Count, Q, F
+from django.db.models import Count, Q, F, Func, DateTimeField
+from django.db.models.functions import TruncMonth, TruncWeek, TruncDay, TruncYear
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import serializers
+
+from analytics.models import BlogView
 from blogs.models import Blog
 from main.utils import dynamic_filter_parser
 
@@ -235,4 +239,153 @@ class TopListAnalytics(APIView):
             'data': data
         }
 
+        return Response(resp)
+
+
+# API #3 - /analytics/performance/
+class PerformanceAnalytics(APIView):
+    class InputSerializer(serializers.Serializer):
+        compare = serializers.ChoiceField(choices=["day", "week", "month", "year"], default="month")
+        user = serializers.CharField(required=False)  # Optional field to filter results for a single user
+        filter = serializers.CharField(required=False)
+
+        def validate_filter(self, value):
+            # basic checks
+            if not value.strip():
+                raise serializers.ValidationError("Filter cannot be empty string")
+            if re.search(r"[^a-zA-Z0-9_:(),|]", value):
+                # allows letters, digits, colon, parentheses, comma, pipe
+                raise serializers.ValidationError(
+                    "Filter contains invalid characters"
+                )
+            # check parentheses balance
+            if value.count("(") != value.count(")"):
+                raise serializers.ValidationError("Unbalanced parentheses in filter")
+
+            return value
+
+        def validate(self, attrs):
+            now = timezone.now()
+            compare_value = attrs['compare']
+
+            # Determine the reporting duration
+            if compare_value == 'year':
+                # Report on the last 5 years
+                attrs['start_date'] = now - relativedelta(years=5)
+            elif compare_value == 'month':
+                # Report on the last 12 months
+                attrs['start_date'] = now - relativedelta(months=12)
+            elif compare_value == 'week':
+                # Report on the last 52 weeks
+                attrs['start_date'] = now - relativedelta(weeks=52)
+            elif compare_value == 'day':
+                # Report on the last 30 days
+                attrs['start_date'] = now - relativedelta(days=30)
+
+            attrs['end_date'] = now
+            return attrs
+
+    # Helper function to map 'compare' to the correct Trunc function
+    def get_trunc_function(self, compare_value):
+        if compare_value == 'month':
+            return TruncMonth
+        elif compare_value == 'week':
+            return TruncWeek
+        elif compare_value == 'day':
+            return TruncDay
+        elif compare_value == 'year':
+            return TruncYear
+        raise ValueError("Invalid compare value.")
+
+    def get(self, request):
+        serializer = self.InputSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        params = serializer.validated_data
+
+        compare = params["compare"]
+        start_date = params["start_date"]
+        end_date = params["end_date"]
+        user = params.get("user_id")
+        dynamic_filter_param = params.get("filter")
+
+        TruncFunc = self.get_trunc_function(compare)
+
+        blogs_qs = Blog.objects.filter(created_at__gte=start_date)
+        views_qs = BlogView.objects.filter(created_at__gte=start_date)
+
+        # Apply user filter - using username
+        if user:
+            blogs_qs = blogs_qs.filter(author__username=user)
+            views_qs = views_qs.filter(blog__author__username=user)
+
+        # Apply dynamic filters
+        if dynamic_filter_param:
+            try:
+                parsed_filter = dynamic_filter_parser(dynamic_filter_param)
+                blogs_qs = blogs_qs.filter(parsed_filter)
+            except Exception as e:
+                return Response({"detail": str(e)}, status=400)
+
+        # Query A: Group Blogs by Period
+        blogs_data = (
+            blogs_qs
+            .annotate(period=TruncFunc('created_at'))
+            .values('period')
+            .annotate(count=Count('id'))
+            .order_by('period')
+        )
+
+        # Query B: Group Views by Period
+        views_data = (
+            views_qs
+            .annotate(period=TruncFunc('created_at'))
+            .values('period')
+            .annotate(count=Count('id'))
+            .order_by('period')
+        )
+
+        # Merging Data - I used a defaultdict instead of a normal dictionary cause it's just easier for handling missing keys
+        timeline = defaultdict(lambda: {'blogs': 0, 'views': 0})
+
+        for item in blogs_data:
+            timeline[item['period']]['blogs'] = item['count']
+
+        for item in views_data:
+            timeline[item['period']]['views'] = item['count']
+
+        # Calculation Z
+        final_final_data = []
+        sorted_periods = sorted(timeline.keys())
+        previous_views = 0
+        date_format = {
+            "day": "%b %d", "week": "Week %W", "month": "%b %Y", "year": "%Y"
+        }.get(compare, "%Y")
+
+        for period in sorted_periods:
+            stats = timeline[period]
+            current_views = stats['views']
+            current_blogs = stats['blogs']
+
+            if previous_views == 0:
+                z_formatted = "N/A"
+            else:
+                growth = ((current_views - previous_views) / previous_views) * 100
+                z_formatted = f"{growth:+.1f}%"
+
+            final_final_data.append({
+                'x': f"{period.strftime(date_format)} ({current_blogs} Blogs)",
+                'y': current_views,
+                'z': z_formatted
+            })
+
+            # here i gotta update previous for next iteration
+            previous_views = current_views
+
+        resp = {
+            'compare': compare,
+            'start_date': start_date,
+            'end_date': end_date,
+            'labels': "X = Period & Blogs Created, Y = Total Views, Z = Growth %",
+            'data': final_final_data
+        }
         return Response(resp)
