@@ -13,7 +13,9 @@ This project is a Django REST API that provides analytics for blogs, users, and 
 
 ## Installation and Setup
 
-Follow these steps to get the project running locally.
+Follow these steps to get the project running.
+
+**Requirements** `Docker` & `Docker Compose`
 
 1. **Clone the Repository**
     ```bash
@@ -21,39 +23,20 @@ Follow these steps to get the project running locally.
     cd SeniorBackendAssessment
     ```
 
-2. **Create and Activate a Virtual Environment**
+2. **Build the docker image**
     ```bash
-    python3 -m venv .venv
-    source .venv/bin/activate
+    docker compose build
     ```
 
-3. **Install Dependencies**
+3. **Start the app**
     ```bash
-    pip install -r requirements.txt
+    docker compose up
+   ```
+   or start the app in background
+   ```bash
+   docker compose up -d
     ```
-
-4. **Apply Database Migrations**
-    This will create the necessary tables in your database(Ensure to have a database named ideeza).
-    ```bash
-    python manage.py migrate
-    ```
-
-5. **Create a Superuser (Optional)**
-    ```bash
-    python manage.py createsuperuser
-    ```
-
-6. **Seed the Database (Recommended)**
-    Populate the database with dummy data to test the API endpoints. This command will create countries, users, blogs, and views.
-    ```bash
-    python manage.py seed_dummy_data
-    ```
-
-7. **Run the Development Server**
-    ```bash
-    python manage.py runserver
-    ```
-    The API will be available at `http://127.0.0.1:8000/`.
+    The API will be available at http://127.0.0.1:8000/.
 
 ## API Endpoints
 

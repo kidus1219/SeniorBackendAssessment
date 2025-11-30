@@ -10,7 +10,7 @@ services:
       - POSTGRES_PASSWORD=postgres
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U postgres" ]
-      interval: 3s
+      interval: 5s
       timeout: 5s
       retries: 5
 
@@ -24,7 +24,7 @@ services:
                 python manage.py seed_dummy_data && 
                 touch .seeded; 
              fi &&
-             gunicorn main.wsgi:application -c gunicorn_config/dev_gunicorn.conf.py"
+             gunicorn main.wsgi:application --bind 0.0.0.0:8000 --timeout 60 --access-logfile - --errorlog -"
     volumes:
       - .:/app
     ports:
