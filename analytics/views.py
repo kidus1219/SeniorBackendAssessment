@@ -1,10 +1,7 @@
-import re
-from collections import defaultdict
-
 from dateutil.relativedelta import relativedelta
 from django.utils import timezone
-from django.db.models import Count, Q, F, Sum, Case, IntegerField, When, Window, ExpressionWrapper, FloatField, Value, Subquery, OuterRef
-from django.db.models.functions import TruncMonth, TruncWeek, TruncDay, TruncYear, Lag, Cast
+from django.db.models import Count, Q, F
+from django.db.models.functions import TruncMonth, TruncWeek, TruncDay, TruncYear
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import serializers
@@ -222,6 +219,8 @@ class PerformanceAnalytics(APIView):
         period_data = list(period_qs)
         date_format = {"day": "%b %d", "week": "Week %W", "month": "%b %Y", "year": "%Y"}.get(compare, "%Y")
 
+        # Implementing this using only queryset functions was very problematic.
+        # I tried different approach using Window, ExpressionWrapper, Lag, Subquery, and more, but there were always a problematic edge cases
         final_data = []
         previous_views = None
         for item in period_data:
