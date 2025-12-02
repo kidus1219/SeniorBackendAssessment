@@ -3,73 +3,31 @@ from collections import defaultdict
 
 from dateutil.relativedelta import relativedelta
 from django.utils import timezone
-from django.db.models import Count, Q, F
-from django.db.models.functions import TruncMonth, TruncWeek, TruncDay, TruncYear
+from django.db.models import Count, Q, F, Sum, Case, IntegerField, When, Window, ExpressionWrapper, FloatField, Value, Subquery, OuterRef
+from django.db.models.functions import TruncMonth, TruncWeek, TruncDay, TruncYear, Lag, Cast
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import serializers
+from django_filters import rest_framework as filters
 
 from analytics.models import BlogView
+from analytics.serializers import BaseAnalyticsInputSerializer
 from blogs.models import Blog
-from main.utils import dynamic_filter_parser
 
 
 # API #1 - /analytics/blog-views/
 class BlogViewsAnalytics(APIView):
-    class InputSerializer(serializers.Serializer):
+    class InputSerializer(BaseAnalyticsInputSerializer):
         object_type = serializers.ChoiceField(choices=["user", "country"], default="user")
-        range = serializers.ChoiceField(choices=["week", "month", "year"], default="year")
-        start_date = serializers.DateTimeField(required=False)
-        end_date = serializers.DateTimeField(required=False)
-        filter_blog_creation = serializers.BooleanField(required=False, default=False)
-        filter = serializers.CharField(required=False)
 
-        def validate_filter(self, value):
-            # basic checks
-            if not value.strip():
-                raise serializers.ValidationError("Filter cannot be empty string")
-            if re.search(r"[^a-zA-Z0-9_:(),|]", value):
-                # allows letters, digits, colon, parentheses, comma, pipe
-                raise serializers.ValidationError(
-                    "Filter contains invalid characters"
-                )
-            # check parentheses balance
-            if value.count("(") != value.count(")"):
-                raise serializers.ValidationError("Unbalanced parentheses in filter")
+    class InputFilterSet(filters.FilterSet):
+        title = filters.CharFilter(lookup_expr="icontains")
+        author = filters.CharFilter(field_name="author__name", lookup_expr="icontains")
+        country = filters.CharFilter(field_name="author__country__name", lookup_expr="icontains")
 
-            return value
-
-        def validate(self, attrs):
-            start = attrs.get("start_date")
-            end = attrs.get("end_date")
-            range_value = attrs.get("range")
-
-            # both or none rule - only pass if both are provided or both are None
-            if bool(start) != bool(end):
-                raise serializers.ValidationError(
-                    "Provide both start_date & end_date or omit both."
-                )
-
-            # if provided
-            if start and end:
-                if start > end:
-                    raise serializers.ValidationError(
-                        "start_date cannot be greater than end_date."
-                    )
-            else:
-                # if not provided, calculate based on range - last week, last month or last year
-                end = timezone.now()
-                if range_value == "week":
-                    start = end - relativedelta(weeks=1)
-                elif range_value == "month":
-                    start = end - relativedelta(months=1)
-                else:
-                    start = end - relativedelta(years=1)
-
-                attrs["start_date"] = start
-                attrs["end_date"] = end
-
-            return attrs
+        class Meta:
+            model = Blog
+            fields = ["title", "author", "country"]
 
     def get(self, request):
         serializer = self.InputSerializer(data=request.query_params)
@@ -80,7 +38,6 @@ class BlogViewsAnalytics(APIView):
         start_date = params["start_date"]
         end_date = params["end_date"]
         filter_blog_creation = params["filter_blog_creation"]
-        dynamic_filter_param = params.get("filter")
 
         qs = Blog.objects.select_related('author', 'author__country').all()
 
@@ -89,12 +46,10 @@ class BlogViewsAnalytics(APIView):
             qs = qs.filter(created_at__gte=start_date, created_at__lte=end_date)
 
         # Dynamic filtering based on additional user query params
-        if dynamic_filter_param:
-            try:
-                parsed_filter = dynamic_filter_parser(dynamic_filter_param)
-                qs = qs.filter(parsed_filter)
-            except Exception as e:
-                return Response({"detail": str(e)}, status=400)
+        filterset = self.InputFilterSet(request.query_params, queryset=qs)
+        if not filterset.is_valid():
+            return Response(filterset.errors, status=400)
+        qs = filterset.qs
 
         if object_type == 'country':
             group_field = 'author__country__name'
@@ -125,60 +80,17 @@ class BlogViewsAnalytics(APIView):
 
 # API #2 - /analytics/top/
 class TopListAnalytics(APIView):
-    class InputSerializer(serializers.Serializer):
+    class InputSerializer(BaseAnalyticsInputSerializer):
         top = serializers.ChoiceField(choices=["user", "country", "blog"], default="user")
-        range = serializers.ChoiceField(choices=["week", "month", "year"], default="year")
-        start_date = serializers.DateTimeField(required=False)
-        end_date = serializers.DateTimeField(required=False)
-        filter_blog_creation = serializers.BooleanField(required=False, default=False)
-        filter = serializers.CharField(required=False)
 
-        def validate_filter(self, value):
-            # basic checks
-            if not value.strip():
-                raise serializers.ValidationError("Filter cannot be empty string")
-            if re.search(r"[^a-zA-Z0-9_:(),|]", value):
-                # allows letters, digits, colon, parentheses, comma, pipe
-                raise serializers.ValidationError(
-                    "Filter contains invalid characters"
-                )
-            # check parentheses balance
-            if value.count("(") != value.count(")"):
-                raise serializers.ValidationError("Unbalanced parentheses in filter")
+    class InputFilterSet(filters.FilterSet):
+        title = filters.CharFilter(lookup_expr="icontains")
+        author = filters.CharFilter(field_name="author__name", lookup_expr="icontains")
+        country = filters.CharFilter(field_name="author__country__name", lookup_expr="icontains")
 
-            return value
-
-        def validate(self, attrs):
-            start = attrs.get("start_date")
-            end = attrs.get("end_date")
-            range_value = attrs.get("range")
-
-            # both or none rule - only pass if both are provided or both are None
-            if bool(start) != bool(end):
-                raise serializers.ValidationError(
-                    "Provide both start_date & end_date or omit both."
-                )
-
-            # if provided
-            if start and end:
-                if start > end:
-                    raise serializers.ValidationError(
-                        "start_date cannot be greater than end_date."
-                    )
-            else:
-                # if not provided, calculate based on range - last week, last month or last year
-                end = timezone.now()
-                if range_value == "week":
-                    start = end - relativedelta(weeks=1)
-                elif range_value == "month":
-                    start = end - relativedelta(months=1)
-                else:
-                    start = end - relativedelta(years=1)
-
-                attrs["start_date"] = start
-                attrs["end_date"] = end
-
-            return attrs
+        class Meta:
+            model = Blog
+            fields = ["title", "author", "country"]
 
     def get(self, request):
         serializer = self.InputSerializer(data=request.query_params)
@@ -189,7 +101,6 @@ class TopListAnalytics(APIView):
         start_date = params["start_date"]
         end_date = params["end_date"]
         filter_blog_creation = params["filter_blog_creation"]
-        dynamic_filter_param = params.get("filter")
 
         # Initial QuerySet
         qs = Blog.objects.select_related('author', 'author__country').all()
@@ -198,12 +109,10 @@ class TopListAnalytics(APIView):
         if filter_blog_creation:
             qs = qs.filter(created_at__gte=start_date, created_at__lte=end_date)
 
-        if dynamic_filter_param:
-            try:
-                parsed_filter = dynamic_filter_parser(dynamic_filter_param)
-                qs = qs.filter(parsed_filter)
-            except Exception as e:
-                return Response({"detail": str(e)}, status=400)
+        filterset = self.InputFilterSet(request.query_params, queryset=qs)
+        if not filterset.is_valid():
+            return Response(filterset.errors, status=400)
+        qs = filterset.qs
 
         # We define the x, y, and z based on the 'top' type
         if top_type == 'user':
@@ -242,27 +151,10 @@ class TopListAnalytics(APIView):
         return Response(resp)
 
 
-# API #3 - /analytics/performance/
 class PerformanceAnalytics(APIView):
     class InputSerializer(serializers.Serializer):
         compare = serializers.ChoiceField(choices=["day", "week", "month", "year"], default="month")
         user = serializers.CharField(required=False)  # Optional field to filter results for a single user
-        filter = serializers.CharField(required=False)
-
-        def validate_filter(self, value):
-            # basic checks
-            if not value.strip():
-                raise serializers.ValidationError("Filter cannot be empty string")
-            if re.search(r"[^a-zA-Z0-9_:(),|]", value):
-                # allows letters, digits, colon, parentheses, comma, pipe
-                raise serializers.ValidationError(
-                    "Filter contains invalid characters"
-                )
-            # check parentheses balance
-            if value.count("(") != value.count(")"):
-                raise serializers.ValidationError("Unbalanced parentheses in filter")
-
-            return value
 
         def validate(self, attrs):
             now = timezone.now()
@@ -285,17 +177,14 @@ class PerformanceAnalytics(APIView):
             attrs['end_date'] = now
             return attrs
 
-    # Helper function to map 'compare' to the correct Trunc function
-    def get_trunc_function(self, compare_value):
-        if compare_value == 'month':
-            return TruncMonth
-        elif compare_value == 'week':
-            return TruncWeek
-        elif compare_value == 'day':
-            return TruncDay
-        elif compare_value == 'year':
-            return TruncYear
-        raise ValueError("Invalid compare value.")
+    class InputFilterSet(filters.FilterSet):
+        title = filters.CharFilter(field_name="blog__title", lookup_expr="icontains")
+        author = filters.CharFilter(field_name="blog__author__name", lookup_expr="icontains")
+        country = filters.CharFilter(field_name="blog__author__country__name", lookup_expr="icontains")
+
+        class Meta:
+            model = BlogView
+            fields = ["title", "author", "country"]
 
     def get(self, request):
         serializer = self.InputSerializer(data=request.query_params)
@@ -306,80 +195,48 @@ class PerformanceAnalytics(APIView):
         start_date = params["start_date"]
         end_date = params["end_date"]
         user = params.get("user")
-        dynamic_filter_param = params.get("filter")
 
-        TruncFunc = self.get_trunc_function(compare)
+        TruncFunc = {'month': TruncMonth, 'week': TruncWeek, 'day': TruncDay, 'year': TruncYear}.get(compare, TruncMonth)
 
-        blogs_qs = Blog.objects.filter(created_at__gte=start_date, created_at__lte=end_date)
-        views_qs = BlogView.objects.filter(created_at__gte=start_date, created_at__lte=end_date)
-
-        # Apply user filter - using username
+        qs = BlogView.objects.filter(created_at__gte=start_date, created_at__lte=end_date)
         if user:
-            blogs_qs = blogs_qs.filter(author__username=user)
-            views_qs = views_qs.filter(blog__author__username=user)
+            qs = qs.filter(blog__author__username=user)
 
         # Apply dynamic filters
-        if dynamic_filter_param:
-            try:
-                parsed_filter = dynamic_filter_parser(dynamic_filter_param)
-                blogs_qs = blogs_qs.filter(parsed_filter)
-                views_qs = views_qs.filter(blog__in=blogs_qs)
-            except Exception as e:
-                return Response({"detail": str(e)}, status=400)
+        filterset = self.InputFilterSet(request.query_params, queryset=qs)
+        if not filterset.is_valid():
+            return Response(filterset.errors, status=400)
+        qs = filterset.qs
 
-        # Query A: Group Blogs by Period
-        blogs_data = (
-            blogs_qs
-            .annotate(period=TruncFunc('created_at'))
+        # Aggregate per period
+        period_qs = (
+            qs.annotate(period=TruncFunc('created_at'))
             .values('period')
-            .annotate(count=Count('id'))
+            .annotate(
+                views_count=Count('id'),
+                blogs_count=Count('blog', distinct=True)
+            )
             .order_by('period')
         )
 
-        # Query B: Group Views by Period
-        views_data = (
-            views_qs
-            .annotate(period=TruncFunc('created_at'))
-            .values('period')
-            .annotate(count=Count('id'))
-            .order_by('period')
-        )
+        period_data = list(period_qs)
+        date_format = {"day": "%b %d", "week": "Week %W", "month": "%b %Y", "year": "%Y"}.get(compare, "%Y")
 
-        # Merging Data(must be in python) - I used a defaultdict instead of a normal dictionary cause it's just easier for handling missing keys
-        timeline = defaultdict(lambda: {'blogs': 0, 'views': 0})
-
-        for item in blogs_data:
-            timeline[item['period']]['blogs'] = item['count']
-
-        for item in views_data:
-            timeline[item['period']]['views'] = item['count']
-
-        # Calculation Z
-        final_final_data = []
-        sorted_periods = sorted(timeline.keys())
-        previous_views = 0
-        date_format = {
-            "day": "%b %d", "week": "Week %W", "month": "%b %Y", "year": "%Y"
-        }.get(compare, "%Y")
-
-        for period in sorted_periods:
-            stats = timeline[period]
-            current_views = stats['views']
-            current_blogs = stats['blogs']
-
-            if previous_views == 0:
-                z_formatted = "N/A"
+        final_data = []
+        previous_views = None
+        for item in period_data:
+            current_views = item['views_count']
+            if previous_views in (None, 0):
+                growth_display = "N/A"
             else:
-                growth = ((current_views - previous_views) / previous_views) * 100
-                z_formatted = f"{growth:+.1f}%"
+                growth_value = ((current_views - previous_views) / previous_views) * 100
+                growth_display = f"{growth_value:+.1f}%"
 
-            final_final_data.append({
-                'x': f"{period.strftime(date_format)} ({current_blogs} Blogs)",
+            final_data.append({
+                'x': f"{item['period'].strftime(date_format)} ({item['blogs_count']} Blogs)",
                 'y': current_views,
-                'z': z_formatted
+                'z': growth_display
             })
-
-            # here i gotta update previous for next iteration
             previous_views = current_views
 
         resp = {
@@ -387,6 +244,6 @@ class PerformanceAnalytics(APIView):
             'start_date': start_date,
             'end_date': end_date,
             'labels': "X = Period & Blogs Created, Y = Total Views, Z = Growth %",
-            'data': final_final_data
+            'data': final_data
         }
         return Response(resp)

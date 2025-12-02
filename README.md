@@ -7,7 +7,7 @@ This project is a Django REST API that provides analytics for blogs, users, and 
 *   **Blog Views Analytics**: Group and aggregate blog and view counts by country or user.
 *   **Top Performers**: Get a Top 10 list of the best-performing blogs, users, or countries based on total views.
 *   **Time-Series Performance**: Analyze view trends and growth/decline over time for specific users or all users.
-*   **Dynamic Filtering**: A powerful, nested filtering engine that supports `and`, `or`, `not`, and various field operators (`eq`, `in`, `gt`, etc.).
+*   **Dynamic Filtering**: uses `django_filters` to allow complex filtering across related models.
 *   **Efficient ORM Usage**: Queries are optimized using `select_related`, `annotate`, `F()` objects, and conditional aggregation to minimize database hits.
 *   **Data Seeding**: Includes a command to populate the database with realistic dummy data for immediate testing and demonstration.
 
@@ -40,7 +40,7 @@ Follow these steps to get the project running.
 
 ## API Endpoints
 
-All endpoints support common parameters like `start_date`, `end_date`, and the powerful `filter` parameter for dynamic queries.
+All endpoints support common parameters like `start_date`, `end_date`, and the powerful `filter` for dynamic queries.
 
 ### 1. Blog Views Analytics
 
@@ -54,7 +54,7 @@ Groups blogs and views by the selected `object_type` within a given time range.
     *   `start_date` (datetime): ISO 8601 format (e.g., `2025-01-01T00:00:00Z`).
     *   `end_date` (datetime): ISO 8601 format. Both start and end dates must be provided or neither(uses range).
     *   `filter_blog_creation` (bool): filter blogs not just blogViews by created_at when true. Default: `false`.
-    *   `filter` (string): Dynamic filter string. See guide at the bottom.
+    *   `**kwarg` (string): Dynamic filter string.(e.g., author='john'&country='China')
 
 *   **Semantics**:
     * `x:` username or country name
@@ -101,7 +101,7 @@ Returns the Top 10 blogs, users, or countries based on total views.
     *   `start_date` (datetime): ISO 8601 format (e.g., `2025-01-01T00:00:00Z`).
     *   `end_date` (datetime): ISO 8601 format. Both start and end dates must be provided or neither(uses range).
     *   `filter_blog_creation` (bool): filter blogs not just blogViews by created_at when true. Default: `false`.
-    *   `filter` (string): Dynamic filter string. See guide at the bottom.
+    *   `**kwarg` (string): Dynamic filter string.(e.g., author='john'&country='China')
 *   **Example Request**:
     ```
     /analytics/top/?top=blog&start_date=2025-01-01&end_date=2025-03-31
@@ -138,7 +138,7 @@ Shows time-series performance for a user or all users, including growth/decline 
 *   **Query Parameters**:
     *   `compare` (string): `day`, `week`, `month`, or `year`. The time bucket for aggregation. Default: `month`.
     *   `user` (string): A specific `username` to filter for. If not specified, aggregates for all users.
-    *   `filter` (string): Dynamic filter string.
+    *   `**kwarg` (string): Dynamic filter string.(e.g., author='john'&country='China')
 *   **Example Request**:
     ```
     /analytics/performance/?compare=month
@@ -170,39 +170,4 @@ Shows time-series performance for a user or all users, including growth/decline 
     }
     ```
 
-## Dynamic Filtering Guide
 
-The `filter` query parameter accepts a URL-encoded string that is parsed into a Django `Q` object. This allows for complex, nested queries on the `Blog` model.
-
-#### Syntax
-
-*   **Basic Condition**: `field:operator:value`
-*   **Logical Operators**: `and(...)`, `or(...)`, `not(...)`
-*   **Combining**: Conditions inside logical operators are comma-separated.
-
-#### Supported Operators
-
-| Operator | Description          | Example                      |
-| :------- | :------------------- | :--------------------------- |
-| `eq`     | Equals               | `author__username:eq:kidus1219` |
-| `ne`     | Not Equals           | `author__country__code:ne:US` |
-| `gt`     | Greater Than         | `id:gt:100`                  |
-| `gte`    | Greater Than or Equal| `created_at:gte:2025-01-01`   |
-| `lt`     | Less Than            | `id:lt:50`                   |
-| `lte`    | Less Than or Equal   | `created_at:lte:2025-03-31`   |
-| `in`     | In a list (pipe-separated) | `author__username:in:user1|user2` |
-
-#### Examples
-
-1.  **Simple AND**: Find blogs by `kidus1219` with an ID greater than 10.
-    *   **Filter String**: `and(author__username:eq:kidus1219,id:gt:10)`
-    *   **URL**: `?filter=and(author__username:eq:kidus1219,id:gt:10)`
-
-2.  **OR with IN**: Find blogs where the author is `user1` or `user2`.
-    *   **Filter String**: `author__username:in:user1|user2`
-    *   **URL**: `?filter=author__username:in:user1|user2`
-
-3.  **Complex Nested Query**: Find blogs from country `US` that are NOT by `testuser`, OR blogs with a title containing "Django".
-    *   **Filter String**: `or(and(author__country__code:eq:US,not(author__username:eq:testuser)),title__icontains:eq:Django)`
-    *   **URL (URL-Encoded)**: `?filter=or(and(author__country__code:eq:US,not(author__username:eq:testuser)),title__icontains:eq:Django)`
-    *(Note: The parser supports any valid Django field lookup like `title__icontains` passed in the `field` part of the condition)*.

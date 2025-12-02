@@ -14,6 +14,7 @@ INSTALLED_APPS = [
 
     'rest_framework',
     'corsheaders',  # todo beware
+    'django_filters',
 
     'users',
     'blogs',
